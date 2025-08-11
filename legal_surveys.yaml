@@ -1,0 +1,57 @@
+surveys:
+  gender_discrimination_employment:
+    id: "gender_discrimination_employment"
+    question: "Does a Specialized Body Receive Complaints about Gender Discrimination in Employment?"
+    criteria: |
+      A “specialized body” refers to an entity or institution that has been established in addition to courts with a constitutional and/or legislative mandate to protect and promote principles of equality. An “independent and autonomous body” functions with a degree of separation and freedom from the direct influence or control of the entity they relate to (e.g., a national government or ministry). It may take forms such as a human rights commission, ombudsperson, labor tribunal, or gender equality commission, among others, that are tasked with receiving, adjudicating, or referring to the competent court, complaints of gender-based discrimination in employment by public and private actors. Note: Labor Inspectorates within the Ministry of Labor are not considered autonomous and independent bodies.  
+      
+      The answer is “Yes” if the following three conditions are met: 
+      A specialized and independent body has a mandate to receive, adjudicate, or refer to the competent courts, complaints made by public and private actors related to discrimination in employment based on gender; AND  
+      The mandate extends to cases about employment relations in the private sector; AND 
+      The body is operational.   
+      
+      Note:  
+      The mandate must list gender and/or sex as a cause of discrimination. 
+      The body must receive complaints about private and public actors. 
+      Employees should not be required to exhaust internal structures before submitting a complaint to such a commission. If required to do so, answer is still “Yes”, but state this very clearly in the comments.  
+      If citing a law/regulation: cite the articles listing gender as a cause of discrimination and allowing the institution to receive complaints. 
+      It may be useful to check whether a specific gender or equal opportunities body exists, such as a gender equality commission, equal opportunities commission, or women’s commission, and whether they have a mandate to adjudicate gender discrimination cases. 
+      Check the Global Association of NHRIs when coding. 
+      
+      The answer is “No” if:  
+      There is no such specialized and independent body; OR  
+      The body in question does not receive complaints of gender discrimination by public and private actors; OR 
+      The body exists, but it does not explicitly receive complaints related to discrimination in employment or labor discrimination based on gender and/or sex.  
+      Legal Basis/Source: Insufficient evidence located
+
+  fair_recruitment_policies:
+    id: "fair_recruitment_policies"
+    question: "Does the Government Provide Awareness-Raising Measures on Fair Recruitment Policies Free from Discrimination Based on Gender?"
+    criteria: |
+      Awareness-raising measures” refers to a set of actions taken by the government, published in the language spoken by the majority group of the population, to sensitize the private sector on how to implement fair recruitment practices. This includes, but is not limited to, the development of education and training, campaigns and public service announcements, publication and distribution of guidance notes, booklets, and best practice manuals, and the availability of free, comprehensive, and accurate information online through official government websites. 
+      
+      The answer is “Yes” if all three conditions are met: 
+      A public entity has introduced awareness-raising measures or published other instructional resources; information provided by a private or nongovernmental agency is insufficient; (AND)  
+      The awareness measures provides private sector employers with information on how to implement nondiscrimination based on gender in recruitment practices; (AND)  
+      The information has been released or updated within the past five years preceding the data collection cut-off date. 
+      
+      Note: Thorough research should be done to code this question, even if the corresponding legal question is “No.” In other words: if the legal question is “No”, it does not generate an automatic “No” in this question. 
+      
+      The answer is “No” if: 
+      There is no evidence that a public entity has introduced such awareness-raising measures or other instructional resources. 
+      Legal Basis/Source: Insufficient evidence located
+
+  flexible_work_arrangements:
+    id: "flexible_work_arrangements"
+    question: "Does the Government Provide Instructional Resources for the Private Sector to Adopt Flexible Work Arrangements?"
+    criteria: |
+      Instructional resources” refers to materials produced and published by the government to sensitize the private sector on how to implement flexible work arrangements. This includes, but is not limited to, the development of education and training, campaigns and public service announcements, publication and distribution of guidance notes, guidebooks, booklets, and best practice manuals, and the availability of free, comprehensive, and accurate information online through official government websites. 
+      
+      The answer is “Yes” if: 
+      A public entity has provided instructional resources to private sector employers with information on how to implement flexible work arrangements.  
+      
+      Note: Thorough research should be done to code this question, even if the corresponding legal question is “No.” In other words: if the legal question is “No”, it does not generate an automatic “No” in this question. 
+      
+      The answer is “No” if:  
+      There is no evidence that the government has provided such instructional resources. 
+      Legal Basis/Source: Insufficient evidence located
