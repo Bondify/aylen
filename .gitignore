@@ -1,4 +1,5 @@
 # API Keys and sensitive files
+legal_surveys.yaml
 api_keys.yaml
 apy_keys.yaml
 *.key
@@ -49,6 +50,9 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Deps
+deps/
 
 # Build outputs
 dist/
