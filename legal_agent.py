@@ -6,13 +6,12 @@ Provides consistent legal analysis across different countries
 import os
 import yaml
 import requests
-from typing import List, Optional, Dict, Any, Union
-from enum import Enum
-from pydantic import BaseModel, Field
+from typing import List, Dict
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.providers.bedrock import BedrockProvider
 from pydantic_ai.models.openai import OpenAIModel
+from backend.data_objects import AIModel, Country, COUNTRY_LANGUAGES, LegalQuery, LegalAnalysisResponse
 
 # Load API keys from YAML file
 def load_api_keys():
@@ -29,48 +28,21 @@ def load_api_keys():
 # Load API keys
 api_keys = load_api_keys()
 
-# Available AI models
-class AIModel(str, Enum):
-    """Available AI models for legal analysis"""
-    GPT_5 = "gpt-5"
-    GPT_4O = "gpt-4o" 
-    GPT_4O_MINI = "gpt-4o-mini"
-    GPT_3_5_TURBO = "gpt-3.5-turbo"
-    CLAUDE_3_5_SONNET = "claude-3.5-sonnet"
 
-# Model information for UI display
-MODEL_INFO = {
-    AIModel.GPT_5: {
-        "name": "GPT-5",
-        "provider": "OpenAI",
-        "description": "Latest OpenAI model",
-        "cost": "Low"
-    },
-    AIModel.GPT_4O_MINI: {
-        "name": "GPT-4o Mini", 
-        "provider": "OpenAI",
-        "description": "Fast and cost-effective",
-        "cost": "Very Low"
-    },
-    AIModel.GPT_4O: {
-        "name": "GPT-4o",
-        "provider": "OpenAI", 
-        "description": "Most capable OpenAI model",
-        "cost": "Medium"
-    },
-    AIModel.GPT_3_5_TURBO: {
-        "name": "GPT-3.5 Turbo",
-        "provider": "OpenAI",
-        "description": "Reliable and affordable",
-        "cost": "Low"
-    },
-    AIModel.CLAUDE_3_5_SONNET: {
-        "name": "Claude 3.5 Sonnet",
-        "provider": "AWS Bedrock",
-        "description": "Excellent for complex reasoning",
-        "cost": "High"
-    }
-}
+def load_survey() -> Dict[str, LegalQuery]:
+    """Load survey questions from YAML file"""
+    try:
+        with open('legal_surveys.yaml', 'r') as file:
+            data = yaml.safe_load(file)
+            surveys = {}
+            for survey_id, survey_data in data['surveys'].items():
+                surveys[survey_id] = LegalQuery(**survey_data)
+            return surveys
+    except FileNotFoundError:
+        raise FileNotFoundError("legal_surveys.yaml file not found.")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Error parsing legal_surveys.yaml: {e}")
+
 
 def get_ai_model(model_choice: AIModel = AIModel.GPT_5):
     """Get an AI model instance based on the choice"""
@@ -92,40 +64,11 @@ def get_model_provider(model_choice: AIModel) -> str:
     """Get the provider type for a model (for temperature settings)"""
     return "bedrock" if model_choice == AIModel.CLAUDE_3_5_SONNET else "openai"
 
-class Country(str, Enum):
-    """Supported countries for legal analysis"""
-    FRANCE = "France"
-    SPAIN = "Spain"
-    SAUDI_ARABIA = "Saudi Arabia"
-    UNITED_STATES = "United States"
-    GERMANY = "Germany"
-    UNITED_KINGDOM = "United Kingdom"
-    CANADA = "Canada"
-    ANTIGUA_AND_BARBUDA = "Antigua and Barbuda"
-    EL_SALVADOR = "El Salvador"
-    BOLIVIA = "Bolivia"
-    GUYANA = "Guyana"
-    ECUADOR = "Ecuador"
-
-# Country to language mapping for web searches
-COUNTRY_LANGUAGES = {
-    Country.FRANCE: ("French", "fr"),
-    Country.SPAIN: ("Spanish", "es"),
-    Country.SAUDI_ARABIA: ("Arabic", "ar"),
-    Country.UNITED_STATES: ("English", "en"),
-    Country.GERMANY: ("German", "de"),
-    Country.UNITED_KINGDOM: ("English", "en"),
-    Country.CANADA: ("English", "en"),
-    Country.ANTIGUA_AND_BARBUDA: ("English", "en"),
-    Country.EL_SALVADOR: ("Spanish", "es"),
-    Country.BOLIVIA: ("Spanish", "es"),
-    Country.GUYANA: ("English", "en"),
-    Country.ECUADOR: ("Spanish", "es"),
-}
 
 def get_country_language(country: Country) -> tuple[str, str]:
     """Get the language name and code for a country"""
     return COUNTRY_LANGUAGES.get(country, ("English", "en"))
+
 
 def search_web_for_legal_info(question: str, country: Country, criteria: str) -> str:
     """
@@ -197,47 +140,6 @@ def search_web_for_legal_info(question: str, country: Country, criteria: str) ->
     except Exception as e:
         print(f"Web search error: {e}")
         return ""
-
-class LegalQuery(BaseModel):
-    """Survey question model"""
-    id: str = Field(description="Unique identifier for the survey")
-    question: str = Field(description="The legal question to analyze")
-    criteria: str = Field(description="Detailed criteria for analysis")
-
-
-def load_survey() -> Dict[str, LegalQuery]:
-    """Load survey questions from YAML file"""
-    try:
-        with open('legal_surveys.yaml', 'r') as file:
-            data = yaml.safe_load(file)
-            surveys = {}
-            for survey_id, survey_data in data['surveys'].items():
-                surveys[survey_id] = LegalQuery(**survey_data)
-            return surveys
-    except FileNotFoundError:
-        raise FileNotFoundError("legal_surveys.yaml file not found.")
-    except yaml.YAMLError as e:
-        raise ValueError(f"Error parsing legal_surveys.yaml: {e}")
-
-
-class LegalAnalysisResponse(BaseModel):
-    """Structured response for legal queries with consistent criteria"""
-    survey_id: str = Field(description="The survey ID being analyzed")
-    country: Country = Field(description="The country being analyzed")
-    question: str = Field(description="The survey question being analyzed")
-    answer: str = Field(description="Direct answer to the legal question")
-    legal_basis: str = Field(description="The legal framework or laws that support this answer")
-    additional_notes: Optional[str] = Field(
-        default=None,
-        description="Important caveats, recent changes, or regional variations"
-    )
-    confidence_level: str = Field(
-        description="Confidence level: High, Medium, or Low based on clarity of legal framework"
-    )
-    is_cached: Optional[bool] = Field(  # 👈 NEW: Cache indicator
-        default=False,
-        description="Whether this response came from cache"
-    )
 
 
 async def analyze_legal_query(question: str, country: Country, criteria: str, model_choice: AIModel = AIModel.GPT_5) -> LegalAnalysisResponse:
@@ -324,32 +226,6 @@ async def analyze_legal_query(question: str, country: Country, criteria: str, mo
     
     # Return initial result if confidence is High or web search failed
     return initial_response
-
-
-# Example usage function
-async def compare_across_countries(question: str, countries: List[Country], criteria: str, model_choice: AIModel = AIModel.GPT_5) -> List[LegalAnalysisResponse]:
-    """
-    Analyze the same legal survey question across multiple countries for comparison
-    
-    Args:
-        question: The legal question to analyze
-        countries: List of countries to analyze
-        criteria: Analysis criteria
-        model_choice: The AI model to use for analysis
-        
-    Returns:
-        List of structured responses for each country
-    """
-    results = []
-    for country in countries:
-        try:
-            analysis = await analyze_legal_query(question, country, criteria, model_choice)
-            results.append(analysis)
-        except Exception as e:
-            print(f"Error analyzing {country.value}: {e}")
-            continue
-    
-    return results
 
 
 async def chat_about_legal_response(
@@ -452,11 +328,9 @@ if __name__ == "__main__":
         print(f"Analyzing Survey: {survey.question}")
         print("\n" + "="*50 + "\n")
         
-        countries = [Country.CANADA]
+        country = Country.CANADA
         
-        print(f"Analyzing across {len(countries)} countries...\n")
-        
-        results = await compare_across_countries(survey.question, countries, survey.criteria)
+        results = await analyze_legal_query(survey.question, country, survey.criteria)
         
         for result in results:
             print(f"=== {result.country.value} ===")
