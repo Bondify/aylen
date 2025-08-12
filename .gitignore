@@ -53,3 +53,8 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+
+# DuckDB cache files
+*.duckdb
+*.duckdb.wal
+legal_cache.duckdb
