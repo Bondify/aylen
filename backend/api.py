@@ -3,7 +3,7 @@ FastAPI wrapper for the Legal AI Agent
 Provides REST API endpoints for the React frontend
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any
@@ -17,13 +17,21 @@ from legal_agent import (
     Country, 
     LegalAnalysisResponse,
     analyze_legal_query,
-    compare_across_countries,
+    analyze_legal_query_with_documents,
     AIModel,
-    MODEL_INFO,
     chat_about_legal_response
 )
+from backend.data_objects import MODEL_INFO
+from backend.document_models import (
+    EnhancedLegalAnalysisRequest, 
+    EnhancedLegalAnalysisResponse, 
+    CustomLegalQueryRequest,
+    DocumentUploadResponse, 
+    WebLinkResponse
+)
+from backend.document_service import document_processor
 
-from cache_service import cache
+from backend.cache_service import cache
 
 app = FastAPI(title="Legal AI Agent API", description="REST API for Legal AI Analysis")
 
@@ -315,96 +323,185 @@ async def get_cached_surveys(country: str, model: str):
         raise HTTPException(status_code=500, detail=f"Error getting cached surveys: {str(e)}")
 
 
-# Add these new models and endpoint after your existing code
+# RAG ENDPOINTS - Document Upload & Enhanced Analysis
 
-class ThreadMessage(BaseModel):
-    role: str  # "user" or "assistant"
-    content: str
-
-class ThreadChatRequest(BaseModel):
-    message: str
-    response_id: str  # We'll use a combination of survey_id + country + model as ID
-    conversation_history: List[ThreadMessage] = []
-    model: str = AIModel.GPT_4O_MINI
-
-class ThreadChatResponse(BaseModel):
-    message: str
-    response_id: str
-
-@app.post("/thread/chat", response_model=ThreadChatResponse)
-async def thread_chat(request: ThreadChatRequest):
-    """Chat about a specific legal analysis response"""
+@app.post("/upload-document", response_model=DocumentUploadResponse)
+async def upload_document(file: UploadFile = File(...)):
+    """Upload and process a document for analysis"""
     try:
-        # Parse the response_id to get the original response details
-        # Format: survey_id|country|model
-        try:
-            survey_id, country_name, model_used = request.response_id.split("|")
-            country = Country(country_name)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid response_id format. Expected: survey_id|country|model"
-            )
+        # Read file content
+        content = await file.read()
         
-        # Try to get the original response from cache
+        # Validate file size (10MB max)
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+        
+        # Process document
+        doc_source = await document_processor.process_uploaded_file(content, file.filename)
+        
+        return DocumentUploadResponse(
+            document_id=doc_source.id,
+            name=doc_source.name,
+            type=doc_source.type,
+            content_length=len(doc_source.content),
+            upload_date=doc_source.upload_date
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
+
+@app.post("/analyze-web-link", response_model=WebLinkResponse)
+async def analyze_web_link(url: str = Form(...)):
+    """Process a web link for analysis"""
+    try:
+        # Basic URL validation
+        if not url.startswith(('http://', 'https://')):
+            url = f"https://{url}"
+            
+        # Process web link
+        doc_source = await document_processor.process_web_link(url)
+        
+        return WebLinkResponse(
+            document_id=doc_source.id,
+            name=doc_source.name,
+            type=doc_source.type,
+            content_length=len(doc_source.content),
+            domain=doc_source.metadata.get("domain", "")
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process web link: {str(e)}")
+
+@app.post("/analyze-enhanced", response_model=EnhancedLegalAnalysisResponse)
+async def analyze_with_documents(request: EnhancedLegalAnalysisRequest):
+    """Enhanced legal analysis with document support (RAG)"""
+    try:
+        # Load surveys and validate
         raw_surveys = load_survey()
-        if survey_id not in raw_surveys:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Survey '{survey_id}' not found"
-            )
+        if request.survey_id not in raw_surveys:
+            raise HTTPException(status_code=404, detail=f"Survey '{request.survey_id}' not found")
         
-        survey = raw_surveys[survey_id]
+        survey = raw_surveys[request.survey_id]
         
-        # Get the original response from cache
-        original_response = cache.get_cached_response(
-            survey_id=survey_id,
-            question=survey.question,
-            criteria=survey.criteria,
-            country=country_name,
-            model=model_used
-        )
-        
-        if not original_response:
-            # If not in cache, we need to create a basic response object
-            # This shouldn't happen often, but we'll handle it gracefully
-            original_response = LegalAnalysisResponse(
-                survey_id=survey_id,
-                country=country,
-                question=survey.question,
-                answer="Original analysis not found in cache",
-                legal_basis="Please refer to the original analysis",
-                confidence_level="Medium"
-            )
-        
-        # Validate model choice
+        # Validate country and model
         try:
+            country = Country(request.country)
             model_choice = AIModel(request.model)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid model: {request.model}"
-            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid parameter: {str(e)}")
         
-        # Convert conversation history
-        history = [
-            {"role": msg.role, "content": msg.content} 
-            for msg in request.conversation_history
-        ]
-        
-        # Get chat response
-        response_message = await chat_about_legal_response(
-            message=request.message,
-            original_response=original_response,
-            conversation_history=history,
-            model_choice=model_choice
+        # Perform enhanced analysis with documents
+        result = await analyze_legal_query_with_documents(
+            question=survey.question,
+            country=country,
+            criteria=survey.criteria,
+            model_choice=model_choice,
+            survey_id=request.survey_id,
+            document_ids=request.document_ids,
+            web_links=request.web_links
         )
         
-        return ThreadChatResponse(
-            message=response_message,
-            response_id=request.response_id
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/analyze-custom", response_model=EnhancedLegalAnalysisResponse)
+async def analyze_custom_query(request: CustomLegalQueryRequest):
+    """Analyze custom legal question with document support (RAG)"""
+    try:
+        # Validate country and model
+        try:
+            country = Country(request.country)
+            model_choice = AIModel(request.model)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid parameter: {str(e)}")
+        
+        # Perform enhanced analysis with documents
+        result = await analyze_legal_query_with_documents(
+            question=request.question,
+            country=country,
+            criteria="Provide comprehensive legal analysis based on available information and uploaded documents.",
+            model_choice=model_choice,
+            survey_id="custom_query",
+            document_ids=request.document_ids,
+            web_links=request.web_links
         )
         
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/search-documents")
+async def search_documents(query: str, document_ids: str = None, top_k: int = 5):
+    """Search through uploaded documents"""
+    try:
+        # Parse document IDs
+        doc_ids = None
+        if document_ids:
+            doc_ids = [doc_id.strip() for doc_id in document_ids.split(',') if doc_id.strip()]
+        
+        # Search documents
+        citations = await document_processor.search_documents(query, doc_ids, top_k)
+        
+        return {
+            "query": query,
+            "document_ids": doc_ids,
+            "citations": [citation.dict() for citation in citations]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/documents")
+async def list_documents():
+    """List all uploaded documents"""
+    try:
+        documents = document_processor.list_documents()
+        return {
+            "documents": [
+                {
+                    "id": doc.id,
+                    "name": doc.name,
+                    "type": doc.type.value,
+                    "upload_date": doc.upload_date.isoformat(),
+                    "content_length": len(doc.content),
+                    "metadata": doc.metadata
+                }
+                for doc in documents
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/documents/{document_id}")
+async def get_document_info(document_id: str):
+    """Get information about a specific document"""
+    try:
+        doc = document_processor.get_document_info(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return {
+            "id": doc.id,
+            "name": doc.name,
+            "type": doc.type.value,
+            "upload_date": doc.upload_date.isoformat(),
+            "content_length": len(doc.content),
+            "metadata": doc.metadata,
+            "content_preview": doc.content[:500] + "..." if len(doc.content) > 500 else doc.content
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
