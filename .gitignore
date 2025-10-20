@@ -62,3 +62,7 @@ build/
 *.duckdb
 *.duckdb.wal
 legal_cache.duckdb
+
+# Data
+data/raw/
+data/results/
