@@ -12,7 +12,7 @@ import os
 
 # Add parent directory to path to import legal_agent
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from legal_agent import (
+from backend.agents.legal_agent import (
     load_survey, 
     Country, 
     LegalAnalysisResponse,

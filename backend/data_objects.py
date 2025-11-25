@@ -155,7 +155,6 @@ class LegalAnalysisResponse(BaseModel):
     question: str = Field(description="The survey question being analyzed")
     answer: Union[BinaryAnswer, MarriageRegime, int] = Field(
         description="MUST be one of: 'Yes', 'No', 'Don't know', 'Not applicable', OR a property regime ('Separation of property', 'Partial community of property', etc.), OR a single number. Keep it SHORT - maximum 50 characters.",
-        max_length=50
         )
     legal_basis: Optional[str] = Field(
         default=None,
@@ -176,4 +175,40 @@ class LegalAnalysisResponse(BaseModel):
 
     def to_series(self) -> pd.Series:
         return pd.Series(self.model_dump())
-    
+
+
+class LegalReviewResponse(BaseModel):
+    """Structured response for legal reviews of previous responses"""
+    # survey_id: str = Field(description="The survey ID being analyzed")
+    # country: Country = Field(description="The country being analyzed")
+    # topic: Topic = Field(description="The topic being analyzed")
+    # question: str = Field(description="The survey question being analyzed")
+    same_as_previous: bool = Field(
+        default=True,
+        description="Whether the response is the same as the previous response",
+        )
+    confidence_level: str = Field(
+        description="Confidence level: High, Medium, or Low based on clarity of legal framework"
+    )
+    new_legal_basis: Optional[str] = Field(
+        default=None,
+        description="The legal framework or laws that support the new answer: Article number, law name, regulation name, policy name, etc."
+        )
+    new_quantitative_details: Optional[str] = Field(
+        default=None,
+        description="The new quantitative details (duration, amounts, age, percentages where applicable)"
+        )
+    url_new_legal_basis: Optional[str] = Field(
+        default=None,
+        description="The URL of the source of the new legal basis if applicable"
+        )
+
+
+    def to_series(self) -> pd.Series:
+        return pd.Series(self.model_dump())
+
+
+class LegalBasisEvaluation(str, Enum):
+    SAME = "Same"
+    DIFFERENT = "Different"
+    INCOMPLETE = "Incomplete"

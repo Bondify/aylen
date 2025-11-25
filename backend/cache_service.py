@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 import duckdb
 from pathlib import Path
 
-from legal_agent import LegalAnalysisResponse, Country
+from backend.data_objects import LegalAnalysisResponse, Country, LegalReviewResponse, Topic
 
 
 class DuckDBCache:
@@ -54,12 +54,33 @@ class DuckDBCache:
                 model VARCHAR NOT NULL,
                 question_text TEXT NOT NULL,
                 criteria TEXT NOT NULL,
+                prompt TEXT NOT NULL,
                 response_data JSON NOT NULL,
                 confidence_level VARCHAR NOT NULL,
                 created_at TIMESTAMP NOT NULL,
                 expires_at TIMESTAMP NOT NULL
             )
         """)
+        
+        # Handle migration: add prompt column if it doesn't exist
+        try:
+            # Check if prompt column exists
+            result = conn.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'legal_cache' AND column_name = 'prompt'
+            """).fetchone()
+            
+            if result is None:
+                # Add prompt column to existing table
+                conn.execute("""
+                    ALTER TABLE legal_cache 
+                    ADD COLUMN prompt TEXT DEFAULT ''
+                """)
+                print("🔄 Migration: Added 'prompt' column to legal_cache table")
+        except Exception as e:
+            # Column might already exist or table is new
+            pass
         
         # Create indexes for faster lookups
         conn.execute("""
@@ -77,9 +98,9 @@ class DuckDBCache:
         
         print(f"✅ DuckDB cache initialized: {self.db_path}")
     
-    def _generate_cache_key(self, survey_id: str, question: str, criteria: str, country: str, model: str) -> str:
-        """Generate a unique cache key"""
-        content = f"{survey_id}:{question.strip()}:{criteria.strip()}:{country}:{model}"
+    def _generate_cache_key(self, prompt: str, model: str) -> str:
+        """Generate a unique cache key based on prompt and model"""
+        content = f"{prompt.strip()}:{model}"
         return hashlib.sha256(content.encode()).hexdigest()
     
     def _calculate_expiry(self, confidence_level: str) -> datetime:
@@ -101,19 +122,20 @@ class DuckDBCache:
     
     def get_cached_response(
         self, 
-        survey_id: str, 
-        question: str, 
-        criteria: str, 
-        country: str, 
+        prompt: str,
         model: str
     ) -> Optional[LegalAnalysisResponse]:
         """
         Retrieve cached response if it exists and hasn't expired
         
+        Args:
+            prompt: The full prompt (system + user message) sent to the model
+            model: The model name
+        
         Returns:
             LegalAnalysisResponse if found, None otherwise
         """
-        cache_key = self._generate_cache_key(survey_id, question, criteria, country, model)
+        cache_key = self._generate_cache_key(prompt, model)
         conn = self._get_connection()
         
         try:
@@ -124,7 +146,7 @@ class DuckDBCache:
             """, [cache_key, datetime.now()]).fetchone()
             
             if not result:
-                print(f"❌ Cache MISS: {survey_id} - {country} - {model}")
+                print(f"❌ Cache MISS: {model}")
                 return None
             
             response_data, expires_at = result
@@ -133,18 +155,29 @@ class DuckDBCache:
             response_dict = json.loads(response_data) if isinstance(response_data, str) else response_data
             
             # Convert back to LegalAnalysisResponse
-            legal_response = LegalAnalysisResponse(
-                survey_id=response_dict['survey_id'],
-                country=Country(response_dict['country']),
-                question=response_dict['question'],
-                answer=response_dict['answer'],
-                legal_basis=response_dict['legal_basis'],
-                additional_notes=response_dict.get('additional_notes'),
+            # legal_response = LegalAnalysisResponse(
+            #     country=Country(response_dict['country']),
+            #     topic=response_dict['topic'],
+            #     question=response_dict['question'],
+            #     answer=response_dict['answer'],
+            #     legal_basis=response_dict.get('legal_basis'),
+            #     additional_notes=response_dict.get('additional_notes'),
+            #     confidence_level=response_dict['confidence_level'],
+            #     is_cached=True
+            # )
+
+            legal_response = LegalReviewResponse(
+                # country=Country(response_dict['country']),
+                # topic=response_dict['topic'],
+                # question=response_dict['question'],
+                same_as_previous=response_dict['same_as_previous'],
+                new_legal_basis=response_dict.get('new_legal_basis'),
+                new_quantitative_details=response_dict.get('new_quantitative_details'),
+                url_new_legal_basis=response_dict.get('url_new_legal_basis'),
                 confidence_level=response_dict['confidence_level'],
-                is_cached=True  # 👈 ADD THIS LINE!
             )
             
-            print(f"🎯 Cache HIT: {survey_id} - {country} - {model} (expires: {expires_at.strftime('%Y-%m-%d')})")
+            print(f"🎯 Cache HIT: {model} (expires: {expires_at.strftime('%Y-%m-%d')})")
             return legal_response
             
         except Exception as e:
@@ -153,26 +186,34 @@ class DuckDBCache:
     
     def store_response(
         self,
-        survey_id: str,
-        question: str,
-        criteria: str,
-        country: str,
+        prompt: str,
         model: str,
-        response: LegalAnalysisResponse
-    ):
-        """Store a legal analysis response in the cache"""
-        cache_key = self._generate_cache_key(survey_id, question, criteria, country, model)
+        response: LegalReviewResponse,
+        question: str,
+        country: Country,
+        topic: Topic
+    ) -> None:
+        """
+        Store a legal analysis response in the cache
+        
+        Args:
+            prompt: The full prompt (system + user message) sent to the model
+            model: The model name
+            response: The LegalReviewResponse to cache
+        """
+        cache_key = self._generate_cache_key(prompt, model)
         expires_at = self._calculate_expiry(response.confidence_level)
         conn = self._get_connection()
         
-        # Convert LegalAnalysisResponse to dict for JSON storage
+        # Convert LegalReviewResponse to dict for JSON storage
         response_data = {
-            'survey_id': response.survey_id,
-            'country': response.country.value,
-            'question': response.question,
-            'answer': response.answer,
-            'legal_basis': response.legal_basis,
-            'additional_notes': response.additional_notes,
+            'country': country.value,
+            'topic': topic.value,
+            'question': question,
+            'same_as_previous': response.same_as_previous,
+            'new_legal_basis': response.new_legal_basis,
+            'new_quantitative_details': response.new_quantitative_details,
+            'url_new_legal_basis': response.url_new_legal_basis,
             'confidence_level': response.confidence_level
         }
         
@@ -181,15 +222,16 @@ class DuckDBCache:
             conn.execute("""
                 INSERT OR REPLACE INTO legal_cache (
                     cache_key, survey_id, country, model, question_text, 
-                    criteria, response_data, confidence_level, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    criteria, prompt, response_data, confidence_level, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 cache_key,
-                survey_id,
-                country,
+                '',  # survey_id kept for schema compatibility
+                country.value,
                 model,
                 question,
-                criteria,
+                '',  # criteria kept for schema compatibility
+                prompt,
                 json.dumps(response_data),
                 response.confidence_level,
                 datetime.now(),
@@ -197,7 +239,7 @@ class DuckDBCache:
             ])
             
             ttl_days = self.ttl_mapping.get(response.confidence_level, 30)
-            print(f"💾 Cached response: {survey_id} - {country} - {model} (TTL: {ttl_days} days)")
+            print(f"💾 Cached response: {country.value} - {model} (TTL: {ttl_days} days)")
             
         except Exception as e:
             print(f"❌ Error storing response in cache: {e}")
